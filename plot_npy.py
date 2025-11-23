@@ -1,3 +1,27 @@
+"""
+===============================================================================
+plot_npy.py
+
+Author: Callen Fields
+Date: 2025-11-23
+Purpose:
+    Plot a frequency vs. time spectrogram from a `.npy` file. Optionally uses 
+    metadata from an accompanying `.npz` file to label the time and frequency 
+    axes correctly. Can also save the plot as a `.png` file.
+
+Features:
+    - Loads a `.npy` spectrogram file
+    - Reads optional `.npz` metadata for proper time and frequency axes
+    - Displays the spectrogram with a colorbar
+    - Optionally saves the figure as a `.png` in the same directory as the input file
+
+Usage:
+    python plot_npy.py <file_prefix> [--save]
+
+Example:
+    python plot_npy.py data/my_spectrogram --save
+===============================================================================
+"""
 import numpy as np
 import matplotlib.pyplot as plt
 import os

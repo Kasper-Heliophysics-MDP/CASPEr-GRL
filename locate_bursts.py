@@ -1,65 +1,81 @@
+"""
+===============================================================================
+locate_bursts.py
+
+Author: Callen Fields
+Date: 2025-11-23
+Purpose:
+    Detect and visually confirm bursts in a 2D spectrogram. This script first 
+    identifies candidate bursts using a multi-level 3-sigma detection, then 
+    provides an interactive viewer for the user to confirm real bursts. Confirmed 
+    bursts are saved as `.npy` files for further analysis.
+
+Features:
+    - Loads spectrograms from `.npy` files with associated `.npz` metadata
+      (`times` and `frequencies`)
+    - Detects potential burst windows using binning and robust 3-sigma filtering
+    - Adds padding around each burst window for context
+    - Interactive Matplotlib viewer with checkboxes for selecting confirmed bursts
+    - Saves confirmed bursts as individual `.npy` files in a specified output directory
+
+Usage:
+    python locate_bursts.py <file_prefix>
+
+Example:
+    python locate_bursts.py data/my_spectrogram
+===============================================================================
+"""
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Button
 from matplotlib.widgets import CheckButtons
 import os
-from pathlib import Path
+import sys
+from cont_3sig import apply_robust_clip, bin_spectrogram, TIME_BIN_FACTOR
 
-UNITS_PER_SECOND = 10
+UNITS_PER_SECOND = 4
 WINDOW_SIZE = 150*UNITS_PER_SECOND #each recording will be 5 minutes
 DATA_DIR = "bursts" #where will this script save files to
+WINDOW_PAD = 60*UNITS_PER_SECOND #add a minute to the beginning and end of each burst window
 
-def show_burst_windows(spec_path, burst_indices, output_dir="confirmed_bursts", window_minutes=5):
+def select_and_save_bursts(spec, meta, windows, file_prefix="date-station", output_dir="confirmed_bursts"):
     """
     Interactive viewer for candidate bursts. Each burst is shown in a 5-min window centered on the detected burst.
     User clicks on figures to mark which bursts are real, and confirmed ones are saved as .npy files.
 
     Args:
         spec_path (str): Path to .npy spectrogram file.
-        burst_indices (list[int]): Time indices (in columns) for potential bursts.
+        windows (list[int]): time indices of burst starts and ends [(start, end),...].
         window_minutes (float): Width of window in minutes (default 5).
         output_dir (str): Directory to save selected bursts.
     """
-    base = Path(spec_path).with_suffix("")
-    npy_path = base.with_suffix(".npy")
-    meta_path = base.with_suffix(".npz")
-
-    spec = np.load(npy_path)
-    if meta_path.exists():
-        meta = np.load(meta_path, allow_pickle=True)
-        times = meta.get("times")
-        freqs = meta.get("frequencies")
-    else:
-        raise FileNotFoundError(f"Metadata file not found at {meta_path}")
+    times = meta.get("times")
+    freqs = meta.get("frequencies")
+    print(times.shape)
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Parse file name: YYMMDD-station-name.npy
-    filename_parts = base.name.split("-")
-    if len(filename_parts) < 2:
-        raise ValueError("Filename must be of the form YYMMDD-station-name.npy")
-    date_str = filename_parts[0]
-    station_name = "-".join(filename_parts[1:])
-
-    # Compute time step per column (in minutes)
-    dt = (times[1] - times[0]) / np.timedelta64(1, "m")
-    half_window = int((window_minutes / 2) / dt)
-
-    n_bursts = len(burst_indices)
+    n_bursts = len(windows)
     confirmed = [False] * n_bursts
 
     # Create figure
-    fig, axes = plt.subplots(n_bursts, 1, figsize=(12, 3 * n_bursts))
-    if n_bursts == 1:
-        axes = [axes]
+    ncols = min(4, n_bursts)
+    nrows = int(np.ceil(n_bursts / ncols))
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows))
+    axes = np.array(axes).reshape(-1)
 
     # Plot each burst
-    for i, ax in enumerate(axes):
-        center = burst_indices[i]
-        start = max(0, center - half_window)
-        end = min(spec.shape[1], center + half_window)
+    burst_idx = 0
+    for (start, end), ax in zip(windows, axes):
+
+        # Extract window from spectrogram
         s_window = spec[:, start:end]
         t_window = times[start:end]
+
+        print(start)
+        print(end)
+        print(times[start])
+        print(times[end])
 
         im = ax.imshow(
             s_window,
@@ -77,11 +93,12 @@ def show_burst_windows(spec_path, burst_indices, output_dir="confirmed_bursts", 
         ax.set_xticks(tick_indices)
         ax.set_xticklabels(time_labels, rotation=30, ha="right")
         ax.set_ylabel("Frequency (Hz)")
-        ax.set_title(f"Burst idx {center}")
+        ax.set_title(f"Burst idx {burst_idx}")
+        burst_idx += 1
 
     # Checkboxes
     rax = plt.axes([0.92, 0.1, 0.07, 0.8])
-    labels = [f"{burst_indices[i]}" for i in range(n_bursts)]
+    labels = [f"{i}" for i in range(n_bursts)]
     check = CheckButtons(rax, labels, confirmed)
 
     def toggle(label):
@@ -93,18 +110,15 @@ def show_burst_windows(spec_path, burst_indices, output_dir="confirmed_bursts", 
     plt.tight_layout(rect=[0, 0, 0.9, 1])
     plt.show()
 
-    # Save confirmed bursts
-    for i, sel in enumerate(confirmed):
+    for (start, end), sel in zip(windows, confirmed):
         if sel:
-            center = burst_indices[i]
-            start = max(0, center - half_window)
-            end = min(spec.shape[1], center + half_window)
+            # Extract padded spectrogram region
             s_window = spec[:, start:end]
 
-            # Get start time for filename
+            # Use padded start for filename time
             t_start = times[start]
             time_str = np.datetime_as_string(t_start, unit="s").split("T")[-1].replace(":", "")
-            save_name = f"{date_str}-{time_str}-{station_name}.npy"
+            save_name = f"{file_prefix}-{time_str}.npy"
             save_path = os.path.join(output_dir, save_name)
 
             np.save(save_path, s_window)
@@ -112,7 +126,7 @@ def show_burst_windows(spec_path, burst_indices, output_dir="confirmed_bursts", 
 
     print(f"Done! Total confirmed bursts: {sum(confirmed)}")
 
-def get_high_values(spec):
+def get_windows(spec):
     """
     Multiple levels of continuous 3-sigma detection to locate potential bursts
     
@@ -120,55 +134,94 @@ def get_high_values(spec):
         spec (np.Array): processed spectrogram
         
     Returns:
-        burst_centers (np.Array): array of indices that determine the center of each burst
+        windows (np.Array): array of starts and ends for each burst window
     """
-    n_freqs, n_time = spec.shape
-    for f in range(n_freqs):
-
-        #3-sigma over each band
-        band = spec[f, :]
-
-        mean_all = np.mean(band)
-        std_all = np.std(band)
-        threshold = mean_all + 3 * std_all
-        mask_high = band > threshold
-
-        spec[f, :] = band * mask_high
+    #credit Jenny Nam
+    plt.imshow(spec, aspect='auto')
+    plt.title("Original Spectrogram")
+    plt.show()
+    binned_spectrogram = bin_spectrogram(spec)
+    outlier_mask = apply_robust_clip(binned_spectrogram)
+    burst_data = np.full_like(binned_spectrogram, np.nan)
+    burst_data[outlier_mask] = binned_spectrogram[outlier_mask]
+    plt.imshow(burst_data, aspect='auto')
+    plt.title("Processed Spectrogram")
+    plt.show()
+    
 
     #collapse to flux then mean filter
-    flux_time = spec.mean(axis=0)  # collapse freqs → flux vs time
-    kernel = np.ones(2*WINDOW_SIZE) / 2*WINDOW_SIZE
+    burst_data = np.nan_to_num(burst_data, nan=0.0)
+    flux_time = np.mean(burst_data, axis=0)  # collapse freqs → flux vs time
+    kernel = np.ones(WINDOW_SIZE) / WINDOW_SIZE
     rolling_mean = np.convolve(flux_time, kernel, mode='same')
-    plt.plot(rolling_mean)
+    plt.plot(flux_time, label="Flux vs time")
+    plt.plot(rolling_mean, label="Rolling mean")
+    plt.title("Flux over time with rolling mean")
+    plt.legend()
     plt.show()
 
-    #3-sigma over the filtered flux data
+    # Find rising and falling edges
     mean_all = np.mean(rolling_mean)
     std_all = np.std(rolling_mean)
-    threshold = mean_all + 3 * std_all
-    mask_high = rolling_mean > threshold
-    indices = np.where(mask_high)[0]
+    threshold = mean_all + 1 * std_all
 
-    #when you see a high value, the next WINDOW_SIZE indices below to that burst
-    burst_centers = []
-    current_index = -WINDOW_SIZE-1 
-    for i in indices:
-        if i < current_index + WINDOW_SIZE:
-            continue
-        else:
-            burst_centers.append(i)
-            current_index = i
+    mask = rolling_mean > threshold
+    diff = np.diff(mask.astype(int))
+    starts = np.where(diff == 1)[0] + 1
+    ends   = np.where(diff == -1)[0] + 1
 
-    return burst_centers
+    if mask[0]:
+        starts = np.r_[0, starts]
+
+    if mask[-1]:
+        ends = np.r_[ends, len(rolling_mean)]
+
+    windows = list(zip(starts, ends))
+    padded_windows = []
+    for s, e in windows:
+        s_pad = max(0, s*TIME_BIN_FACTOR - WINDOW_PAD)
+        e_pad = min(spec.shape[1], e*TIME_BIN_FACTOR + WINDOW_PAD)
+        padded_windows.append((s_pad, e_pad))
+
+    return padded_windows 
 
 if __name__ == "__main__":
-    spec = np.load("250106-Marquette-Senior-Hig.npy")
-    times = np.load("250106-Marquette-Senior-Hig.npz")  # timestamps or seconds array
 
-    burst_centers = get_high_values(spec.copy())
+    if len(sys.argv) < 2:
+        print("Usage: python locate_bursts.py <file_prefix>")
+        sys.exit(1)
+    
+    base_file = sys.argv[1]
+    npy_file = base_file + ".npy"
+    npz_file = base_file + ".npz"
 
-    show_burst_windows(
-        "250106-Marquette-Senior-Hig",
-        burst_centers,
+    # Load .npy
+    if os.path.exists(npy_file):
+        try:
+            spec = np.load(npy_file)
+            print(f"✅ Loaded {npy_file}, shape = {spec.shape}")
+        except Exception as e:
+            print(f"❌ Error loading {npy_file}: {e}")
+    else:
+        print(f"❌ File not found: {npy_file}")
+
+    # Load .npz
+    if os.path.exists(npz_file):
+        try:
+            meta = np.load(npz_file)
+            print(f"✅ Loaded {npz_file}, keys = {list(meta.keys())}")
+        except Exception as e:
+            print(f"❌ Error loading {npz_file}: {e}")
+    else:
+        print(f"❌ File not found: {npz_file}")
+
+    windows = get_windows(spec)
+    print(windows)
+
+    select_and_save_bursts(
+        spec,
+        meta,
+        windows,
+        file_prefix=base_file,
         output_dir=DATA_DIR
     )
