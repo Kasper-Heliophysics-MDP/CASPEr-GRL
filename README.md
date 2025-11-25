@@ -4,6 +4,7 @@ This repository provides the pipeline for converting SPS telemetry files into NP
 
 <img width="1363" height="394" alt="Screenshot 2025-11-25 at 1 19 21 AM" src="https://github.com/user-attachments/assets/2d1cfb01-f9b6-4066-b6b3-0a09d9e544eb" />
 
+Authors: Fall 25 SunRISE HELOS Software Team Cohort
 ---
 
 ## 1. Repository Structure
@@ -29,7 +30,7 @@ CASPEr-GRL/
 
 ## 2. Pipeline Summary
 
-### (1) SPS → NPY Conversion
+### (1) SPS to NPY Conversion
 `convert_SPS.py` reads `.sps` telemetry files and outputs `.npy` arrays.
 
 ### (2) Preprocessing (optional)
