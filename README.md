@@ -1,6 +1,6 @@
 # CASPEr-GRL Data Processing & Burst Detection Pipeline
 
-This repository provides a workflow for converting SPS telemetry files into NPY arrays, optionally preprocessing the signals, and performing Radon-based burst detection. The system is configurable through a single `config.py` and designed for reproducible scientific analysis.
+This repository provides the pipeline for converting SPS telemetry files into NPY arrays, optionally preprocessing the signals, and performing Radon-based burst detection. The system is configurable through a single `config.py` and designed for reproducible scientific analysis.
 
 <img width="1363" height="394" alt="Screenshot 2025-11-25 at 1 19 21 AM" src="https://github.com/user-attachments/assets/2d1cfb01-f9b6-4066-b6b3-0a09d9e544eb" />
 
@@ -93,7 +93,7 @@ Controls remote synchronization behavior.
 
 ---
 
-## 5.2 SPS Conversion (SPS → NPY)
+## 5.2 SPS Conversion (SPS to NPY)
 
 ```python
 SPS_DUMP_STN = DESTINATION_PATH_DBX
