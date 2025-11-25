@@ -4,3 +4,8 @@ argparse
 pandas
 pathlib
 matplotlib
+astropy.io
+tqdm
+skimage.transform
+dropbox
+dotenv
