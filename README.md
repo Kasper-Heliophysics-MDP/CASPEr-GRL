@@ -1,105 +1,148 @@
-# CASPEr-GRL
-Computer Assisted Solar Phenomena Extractor for Ground Radio Lab
+# CASPEr-GRL Data Processing & Burst Detection Pipeline
 
-**Authors:** Callen Fields
+This repository provides a workflow for converting SPS telemetry files into NPY arrays, optionally preprocessing the signals, and performing Radon-based burst detection. The system is configurable through a single `config.py` and designed for reproducible scientific analysis.
+
+<img width="1363" height="394" alt="Screenshot 2025-11-25 at 1 19 21 AM" src="https://github.com/user-attachments/assets/2d1cfb01-f9b6-4066-b6b3-0a09d9e544eb" />
 
 ---
 
-## Overview
-Ground Radio Lab data prep and metadata generation tool used to build datasets for ML applications
+## 1. Repository Structure
 
-## Setup
-This repo submodules the preprocessing tools repo. You MUST pull the submodule before using this repo
-`git clone https://github.com/Kasper-Heliophysics-MDP/eCallisto-Burst-Grabber.git`
-`cd eCallisto-Burst-Grabber`
-`git submodule update --init --recursive`
+```
+CASPEr-GRL/
+├── README.md
+├── requirements.txt
+├── _sps_data/         # Raw SPS files
+├── _raw_npy/          # SPS to NPY converted files
+├── _cleaned_npy/      # Preprocessed output
+├── _detected_srb/     # Radon-based detection output
+└── source/
+    ├── config.py
+    ├── convert_SPS.py
+    ├── preprocess_data.py
+    ├── radon_analysis.py
+    ├── dbx_sync.py
+    └── preprocess/
+```
 
-Use `pip install -r requirements.txt` to import all required packages
+---
 
-## File Descriptions
+## 2. Pipeline Summary
 
-### `cont_3sig.py`
+### (1) SPS → NPY Conversion
+`convert_SPS.py` reads `.sps` telemetry files and outputs `.npy` arrays.
 
-- **Purpose:** Detect solar bursts in a 2D spectrogram using a highly efficient "bin and filter" method. The script downsamples the spectrogram into larger “super-pixels” and applies a fast Median Absolute Deviation (MAD) filter to identify bursts, achieving >100x speed compared to full-resolution filtering. Script developed by 2025 DSP subteam
+### (2) Preprocessing (optional)
+`preprocess_data.py` performs gap-filling, filtering, detrending, and other signal preparation steps.
 
-- **Usage:**
+### (3) Radon Transform Burst Identification
+`radon_analysis.py` applies Radon-transform feature extraction and produces detection maps and diagnostic plots.
 
-    ```bash
-    python cont_3sig.py
-    ```
+### (4) Optional Dropbox Synchronization
+`dbx_sync.py` acquires SPS files from cloud storage if enabled.
 
-- **Parameters & Settings:**  
-  - `FREQ_BIN_FACTOR` : Number of frequency channels to combine when binning (default: 5)  
-  - `TIME_BIN_FACTOR` : Number of time steps to combine when binning (default: 10)  
-  - `WINDOW_MINUTES` : Window size for MAD filter in minutes (default: 5)  
-  - `SIGMA_THRESHOLD` : Threshold in number of sigmas to classify an outlier (default: 3)  
-  - `STEPS_PER_MINUTE` : Original sampling rate in steps per minute (default: 190)  
+---
 
-- **Example:**  
+## 3. Installation
 
-    1. Update `INPUT_FILE` in the script to point to your `.npy` spectrogram file:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-        ```python
-        INPUT_FILE = "data/ALASKA-ANCHORAGE/ALASKA-ANCHORAGE_2024-07-20.npy"
-        ```
+---
 
-    2. Run the script:
+## 4. Running the Full Pipeline
 
-        ```bash
-        python fast_robust_clip.py
-        ```
+```bash
+bash sample_data.sh
+```
 
-- **Outputs:** The script generates the following files in the same directory as the input:
+Or run steps manually:
 
-  - `*_binned_FxT.npy` : The binned spectrogram  
-  - `*_binned_FxT_cleaned.npy` : Cleaned spectrogram with outliers replaced by NaN  
-  - `*_binned_FxT_mask.npy` : Boolean mask of detected outliers  
-  - `*_binned_FxT_bursts.npy` : Array highlighting only the bursts for visualization
+```bash
+python3 source/convert_SPS.py
+python3 source/preprocess_data.py
+python3 source/radon_analysis.py
+```
 
-This setup allows rapid detection and visualization of solar bursts while preserving the quiet regions for further analysis.
+---
 
-### `csv_to_npy.py`
+# 5. Configuration Guide (`config.py`)
 
-- **Purpose:** Convert a spectrogram-style CSV file into NumPy `.npy` and `.npz` files for easy loading, plotting, or downstream processing. Includes optional zero-gap interpolation and preprocessing (AGBS + AMF). CSV file is generated using Radio-Sky Spectrograph: https://www.radiosky.com/specdownload.html
+All behavior is controlled in:
 
-- **Usage:**  
+```
+source/config.py
+```
 
-    ```bash
-    python csv_to_npy.py <csv_file> [--fill_zeros] [--preprocess]
-    ```
+---
 
-- **Options:**  
-  - `-f`, `--fill_zeros` : Fill zero-valued gaps in the spectrogram using linear interpolation  
-  - `-p`, `--preprocess` : Apply Adaptive Gaussian Background Subtraction (AGBS) and Adaptive Median Filtering (AMF)
+## 5.1 Dropbox Sync Settings
 
-- **Example:**  
+```python
+LOG_DBX         = True
+SAMPLE_RATE_DBX = 0.01
+DRY_RUN_DBX     = False
+WANT_DBX        = ["sps"]
+DESTINATION_PATH_DBX = "./_sps_data"
+```
 
-    ```bash
-    python csv_to_npy.py data/my_spectrogram.csv --fill_zeros --preprocess
+Controls remote synchronization behavior.
 
-### `locate_bursts.py`
+---
 
-- **Purpose:** Detect and visually confirm bursts in a 2D spectrogram. The script first applies a multi-level 3-sigma detection to locate candidate bursts, then presents an interactive viewer where the user can select confirmed bursts. Selected bursts are saved as `.npy` files for further analysis.
+## 5.2 SPS Conversion (SPS → NPY)
 
-- **Usage:**
+```python
+SPS_DUMP_STN = DESTINATION_PATH_DBX
+NPY_DIR_STN  = "./_raw_npy"
+MAKE_NPY_STN = True
+SHOW_SPS_STN = False
+```
 
-    ```bash
-    python locate_bursts.py <file_prefix>
-    ```
+Ensures SPS files are converted into NPY format.
 
-- **Parameters & Settings:**  
-  - `WINDOW_SIZE` : Default window size in samples for rolling mean (5 minutes)  
-  - `UNITS_PER_SECOND` : Sampling rate used to convert minutes → samples (default: 4)  
-  - `WINDOW_PAD` : Padding added to each burst window on both sides (default: 1 minute)  
-  - `DATA_DIR` : Directory to save confirmed bursts (default: `bursts`)  
-  - `TIME_BIN_FACTOR` : Factor used to scale burst windows according to binning  
+---
 
-### `plot_npy.py`
+## 5.3 Preprocessing Options
 
-- **Purpose:** Plot a frequency vs. time spectrogram from a `.npy` file. Optionally uses metadata from an accompanying `.npz` file for proper time and frequency axes and can save the figure as a `.png`.
+```python
+NPY_DUMP_PRP    = NPY_DIR_STN
+FILL_ZERO_PRP   = True
+PREPROCESS_PRP  = False
+CLEANED_NPY_PRP = "./_cleaned_npy"
+```
 
-- **Usage:**
+To enable full filtering and preprocessing:
 
-    ```bash
-    python plot_npy.py <file_prefix> [--save]
-    ```
+```python
+PREPROCESS_PRP = True
+```
+
+---
+
+## 5.4 Radon Transform & Burst Detection
+
+```python
+INPUT_DIR_RA  = CLEANED_NPY_PRP
+OUTPUT_DIR_RA = "./_detected_srb"
+CREATE_IMG_RA = True
+```
+
+Controls Radon analysis input/output and image creation.
+
+---
+
+## 5.5 Directory Creation
+
+Run:
+
+```bash
+python3 source/config.py
+```
+
+to auto-create all required output folders.
+
+---
